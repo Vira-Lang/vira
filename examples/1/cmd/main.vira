@@ -1,1 +1,35 @@
+@ main.vira
+@ Główny plik programu w języku Vira
+@ Położenie: cmd/main.vira
 
+<io>      @ Import modułu wejścia/wyjścia
+<math>    @ Import modułu matematycznego
+
+@ Funkcja obliczająca silnię (rekurencyjnie)
+func factorial(n: int) -> int
+[
+    if n <= 1 [
+        return 1
+    ]
+    return n * factorial(n - 1)
+]
+
+@ Funkcja główna – punkt wejścia programu
+func main()
+[
+    @ Deklaracja zmiennej statycznej
+    let name: string = "Vira"
+    let number: int = 10
+
+    @ Obliczenie silni
+    let fact = factorial(number)
+
+    @ Wypisanie wyniku bez nawiasów – write zamiast print
+    write "Hello, " + name + "!"
+    write "Silnia z " + number + " = " + fact
+
+    @ Przykład użycia wbudowanego kodu w innym języku
+    # =python= [
+        print(f"Potwierdzenie z Pythona: silnia({number}) = {fact}")
+    ]
+]
