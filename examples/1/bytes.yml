@@ -1,1 +1,48 @@
+# bytes.yml
+# Konfiguracja projektu Vira – analog Cargo.toml / package.json
 
+name: hello-vira
+version: 0.1.0
+author: Jan Kowalski <jan@example.com>
+description: Przykładowy projekt w języku Vira – wypisuje "Hello, Vira!" i oblicza silnię
+license: MIT
+edition: 2025
+
+# Katalog źródłowy (domyślnie "cmd")
+<>:
+  cmd
+
+# Zależności produkcyjne
+dependencies:
+  io: ^1.0.0
+  math: ^2.1.0
+
+# Zależności deweloperskie (do testów, fmt, itp.)
+dev-dependencies:
+  testing: ^1.0.0
+
+# Ścieżki niestandardowe
+paths:
+  tests: tests
+  build: build
+  runtime: build/runtime
+
+# Ustawienia kompilacji
+[build]
+target: native
+optimize: release
+strip: true
+
+# Ustawienia testów
+[test]
+parallel: true
+coverage: false
+
+# Metadane dodatkowe
+[metadata]
+keywords:
+  - vira
+  - example
+  - hello-world
+repository: https://github.com/twoj-user/hello-vira
+documentation: https://vira-lang.org/docs/examples/hello
