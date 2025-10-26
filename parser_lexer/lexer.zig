@@ -68,7 +68,7 @@ pub const Lexer = struct {
         return i;
     }
 
-    pub fn skipWhitespace(self: *Lexer) {
+    pub fn skipWhitespace(self: *Lexer) void {
         while (!self.isAtEnd()) {
             const c = self.peek();
             switch (c) {
@@ -223,7 +223,7 @@ pub const Lexer = struct {
     }
 };
 
-const keywords = std.ComptimeStringMap(TokenType, .{
+const keywords = std.StaticStringMap(TokenType).initComptime(.{
     .{ "write", .Write },
     .{ "let", .Let },
     .{ "func", .Func },
