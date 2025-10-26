@@ -24,6 +24,14 @@ pub const AstNode = union(enum) {
 
 pub const Param = struct { name: []const u8, typ: []const u8 };
 
+pub const Error = error {
+    OutOfMemory,
+    ParseError,
+    MissingArrow,
+    InvalidCallee,
+    InvalidPrimary,
+};
+
 pub const Parser = struct {
     tokens: ArrayList(Token),
     current: usize = 0,
@@ -35,9 +43,10 @@ pub const Parser = struct {
 
     pub fn deinit(self: *Parser) void {
         // Deinit AST recursively if needed, stub
+        _ = self;
     }
 
-    pub fn parse(self: *Parser) !ArrayList(*AstNode) {
+    pub fn parse(self: *Parser) Error!ArrayList(*AstNode) {
         var statements = ArrayList(*AstNode).init(self.allocator);
         errdefer statements.deinit();
 
@@ -48,7 +57,7 @@ pub const Parser = struct {
         return statements;
     }
 
-    pub fn statement(self: *Parser) !*AstNode {
+    pub fn statement(self: *Parser) Error!*AstNode {
         if (self.match(.Func)) return try self.funcDecl();
         if (self.match(.Let)) return try self.varDecl();
         if (self.match(.If)) return try self.ifStmt();
@@ -59,7 +68,7 @@ pub const Parser = struct {
         return try self.expressionStmt();
     }
 
-    pub fn funcDecl(self: *Parser) !*AstNode {
+    pub fn funcDecl(self: *Parser) Error!*AstNode {
         const name = try self.consume(.Identifier, "Expect function name.");
         _ = try self.consume(.LeftParen, "Expect '(' after name.");
         var params = ArrayList(Param).init(self.allocator);
@@ -80,24 +89,24 @@ pub const Parser = struct {
             node.* = .{ .FuncDecl = .{ .name = name.lexeme, .params = params, .return_type = return_type.lexeme, .body = body } };
             return node;
         } else {
-            return error.MissingArrow;
+            return Error.MissingArrow;
         }
     }
 
-    pub fn varDecl(self: *Parser) !*AstNode {
+    pub fn varDecl(self: *Parser) Error!*AstNode {
         const name = try self.consume(.Identifier, "Expect variable name.");
         var typ: ?[]const u8 = null;
         if (self.match(.Colon)) {
             typ = (try self.consume(.Identifier, "Expect type.")).lexeme;
         }
         _ = try self.consume(.Equals, "Expect '=' after variable.");
-        const init = try self.expression();
+        const initializer = try self.expression();
         const node = try self.allocator.create(AstNode);
-        node.* = .{ .VarDecl = .{ .name = name.lexeme, .typ = typ, .init = init } };
+        node.* = .{ .VarDecl = .{ .name = name.lexeme, .typ = typ, .init = initializer } };
         return node;
     }
 
-    pub fn ifStmt(self: *Parser) !*AstNode {
+    pub fn ifStmt(self: *Parser) Error!*AstNode {
         const cond = try self.expression();
         const then = try self.statement();
         var else_: ?*AstNode = null;
@@ -109,7 +118,7 @@ pub const Parser = struct {
         return node;
     }
 
-    pub fn whileStmt(self: *Parser) !*AstNode {
+    pub fn whileStmt(self: *Parser) Error!*AstNode {
         const cond = try self.expression();
         const body = try self.statement();
         const node = try self.allocator.create(AstNode);
@@ -117,17 +126,17 @@ pub const Parser = struct {
         return node;
     }
 
-    pub fn forStmt(self: *Parser) !*AstNode {
-        const init = try self.statement();
+    pub fn forStmt(self: *Parser) Error!*AstNode {
+        const for_init = try self.statement();
         const cond = try self.expression();
         const incr = try self.expression();
         const body = try self.statement();
         const node = try self.allocator.create(AstNode);
-        node.* = .{ .ForStmt = .{ .init = init, .cond = cond, .incr = incr, .body = body } };
+        node.* = .{ .ForStmt = .{ .init = for_init, .cond = cond, .incr = incr, .body = body } };
         return node;
     }
 
-    pub fn returnStmt(self: *Parser) !*AstNode {
+    pub fn returnStmt(self: *Parser) Error!*AstNode {
         var expr: ?*AstNode = null;
         if (!self.check(.RightBracket)) {
             expr = try self.expression();
@@ -137,7 +146,7 @@ pub const Parser = struct {
         return node;
     }
 
-    pub fn block(self: *Parser) !*AstNode {
+    pub fn block(self: *Parser) Error!*AstNode {
         var statements = ArrayList(*AstNode).init(self.allocator);
         while (!self.check(.RightBracket) and !self.isAtEnd()) {
             try statements.append(try self.statement());
@@ -148,15 +157,15 @@ pub const Parser = struct {
         return node;
     }
 
-    pub fn expressionStmt(self: *Parser) !*AstNode {
+    pub fn expressionStmt(self: *Parser) Error!*AstNode {
         return try self.expression();
     }
 
-    pub fn expression(self: *Parser) !*AstNode {
+    pub fn expression(self: *Parser) Error!*AstNode {
         return try self.logicalOr();
     }
 
-    pub fn logicalOr(self: *Parser) !*AstNode {
+    pub fn logicalOr(self: *Parser) Error!*AstNode {
         var expr = try self.logicalAnd();
         while (self.match(.Or)) {
             const op = self.previous().typ;
@@ -168,7 +177,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn logicalAnd(self: *Parser) !*AstNode {
+    pub fn logicalAnd(self: *Parser) Error!*AstNode {
         var expr = try self.equality();
         while (self.match(.And)) {
             const op = self.previous().typ;
@@ -180,7 +189,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn equality(self: *Parser) !*AstNode {
+    pub fn equality(self: *Parser) Error!*AstNode {
         var expr = try self.comparison();
         while (self.match(.EqualEqual) or self.match(.BangEqual)) {
             const op = self.previous().typ;
@@ -192,7 +201,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn comparison(self: *Parser) !*AstNode {
+    pub fn comparison(self: *Parser) Error!*AstNode {
         var expr = try self.term();
         while (self.match(.Greater) or self.match(.GreaterEqual) or self.match(.Less) or self.match(.LessEqual)) {
             const op = self.previous().typ;
@@ -204,7 +213,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn term(self: *Parser) !*AstNode {
+    pub fn term(self: *Parser) Error!*AstNode {
         var expr = try self.factor();
         while (self.match(.Minus) or self.match(.Plus)) {
             const op = self.previous().typ;
@@ -216,7 +225,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn factor(self: *Parser) !*AstNode {
+    pub fn factor(self: *Parser) Error!*AstNode {
         var expr = try self.unary();
         while (self.match(.Slash) or self.match(.Star) or self.match(.Mod)) {
             const op = self.previous().typ;
@@ -228,7 +237,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn unary(self: *Parser) !*AstNode {
+    pub fn unary(self: *Parser) Error!*AstNode {
         if (self.match(.Bang) or self.match(.Minus)) {
             const op = self.previous().typ;
             const right = try self.unary();
@@ -239,8 +248,8 @@ pub const Parser = struct {
         return try self.call();
     }
 
-    pub fn call(self: *Parser) !*AstNode {
-        var expr = try self.primary();
+    pub fn call(self: *Parser) Error!*AstNode {
+        const expr = try self.primary();
         if (self.match(.LeftParen)) {
             var args = ArrayList(*AstNode).init(self.allocator);
             if (!self.check(.RightParen)) {
@@ -250,7 +259,7 @@ pub const Parser = struct {
                 }
             }
             _ = try self.consume(.RightParen, "Expect ')' after arguments.");
-            if (expr.* != .Literal or expr.Literal.typ != .Identifier) return error.InvalidCallee;
+            if (expr.* != .Literal or expr.Literal.typ != .Identifier) return Error.InvalidCallee;
             const callee = expr.Literal.value;
             const node = try self.allocator.create(AstNode);
             node.* = .{ .Call = .{ .callee = callee, .args = args } };
@@ -259,7 +268,7 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn primary(self: *Parser) !*AstNode {
+    pub fn primary(self: *Parser) Error!*AstNode {
         if (self.match(.False)) return try self.literal(.False);
         if (self.match(.True)) return try self.literal(.True);
         if (self.match(.Number)) return try self.literal(.Number);
@@ -284,10 +293,10 @@ pub const Parser = struct {
             _ = try self.consume(.RightParen, "Expect ')' after expression.");
             return expr;
         }
-        return error.InvalidPrimary;
+        return Error.InvalidPrimary;
     }
 
-    pub fn literal(self: *Parser, typ: TokenType) !*AstNode {
+    pub fn literal(self: *Parser, typ: TokenType) Error!*AstNode {
         const token = self.previous();
         const node = try self.allocator.create(AstNode);
         node.* = .{ .Literal = .{ .value = token.lexeme, .typ = typ } };
@@ -320,15 +329,16 @@ pub const Parser = struct {
         return self.tokens.items[self.current].typ == .Eof;
     }
 
-    pub fn consume(self: *Parser, typ: TokenType, msg: []const u8) !Token {
+    pub fn consume(self: *Parser, typ: TokenType, msg: []const u8) Error!Token {
         if (self.check(typ)) return self.advance();
         try self.errorAt(self.previous(), msg);
-        return error.ParseError;
+        return Error.ParseError;
     }
 
-    pub fn errorAt(self: *Parser, token: Token, msg: []const u8) !void {
+    pub fn errorAt(self: *Parser, token: Token, msg: []const u8) Error!void {
         std.debug.print("Error at line {d}, column {d}: {s}\n", .{token.line, token.column, msg});
-        return error.ParseError;
+        _ = self;
+        return Error.ParseError;
     }
 
     // Dodano więcej funkcji, np. synchronize po error
