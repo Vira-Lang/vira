@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-const repoURL = "https://bytes.io/packages/"
+const repoURL = "https://github.com/Bytes-Repository/bytes.io/blob/main/repository/"
 
 func downloadPackage(pkgName string, destDir string) error {
 	url := repoURL + pkgName + ".tar.gz"
