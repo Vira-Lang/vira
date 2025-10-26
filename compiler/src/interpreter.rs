@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::arena::Arena;
-use crate::ast::{AstNode, BinOp, UnaryOp, ViraType};
+use crate::ast::{AstNode, BinOp, UnaryOp};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -71,13 +71,14 @@ impl Interpreter {
             }
             AstNode::VarRef(name) => self.variables.get(name).cloned().ok_or("Undefined variable.".to_string()),
             AstNode::FuncDecl(name, _, _, body) => {
-                self.functions.insert(name.clone(), *body.clone());
+                self.functions.insert(name.clone(), *(*body).clone());
                 Ok(Value::Int(0))
             }
             AstNode::Call(name, args) => {
-                let func = self.functions.get(name).ok_or("Undefined function.")?;
+                let func_opt = self.functions.get(name);
+                let func = func_opt.cloned().ok_or("Undefined function.")?;
                 // Simplified, add param binding
-                self.execute(func)
+                self.execute(&func)
             }
             AstNode::If(cond, then, else_) => {
                 if let Value::Bool(true) = self.execute(cond)? {
