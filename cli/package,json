@@ -1,0 +1,21 @@
+{
+  "name": "vira",
+  "version": "0.1.0",
+  "description": "Vira CLI in JavaScript",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.3",
+    "commander": "^9.4.1",
+    "inquirer": "^8.2.5",
+    "js-yaml": "^4.1.0",
+    "ora": "^5.4.1",
+    "rimraf": "^3.0.2"
+  },
+  "bin": {
+    "vira": "./main.js"
+  }
+}
