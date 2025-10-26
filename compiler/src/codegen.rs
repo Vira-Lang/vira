@@ -42,7 +42,7 @@ impl CodeGen {
         fn_builder.seal_block(entry_block);
 
         for node in ast {
-            self.codegen_node(&mut fn_builder, node)?;
+            CodeGen::codegen_node(&mut fn_builder, node)?;
         }
 
         let zero = fn_builder.ins().iconst(types::I64, 0);
@@ -57,7 +57,7 @@ impl CodeGen {
         Ok(code)
     }
 
-    fn codegen_node(&mut self, builder: &mut FunctionBuilder, node: &AstNode) -> Result<Value, String> {
+    fn codegen_node(builder: &mut FunctionBuilder, node: &AstNode) -> Result<Value, String> {
         match node {
             AstNode::Literal(val) => Ok(builder.ins().iconst(types::I64, *val)),
             AstNode::FloatLiteral(val) => Ok(builder.ins().f64const(*val)),
