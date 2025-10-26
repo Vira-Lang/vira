@@ -5,7 +5,7 @@ pub fn format(allocator: Allocator, source: []const u8) ![]u8 {
     // Prosty formatter: dodaj spacje, nowe linie itp.
     // Rozbudowano: np. indent blocks
     var formatted = try allocator.alloc(u8, source.len * 2);
-    defer allocator.free(formatted); // Nie, zwracamy, caller free
+    // Usunięto defer allocator.free(formatted), ponieważ zwracamy bufor i caller musi go zwolnić
     var i: usize = 0;
     var j: usize = 0;
     var indent: usize = 0;
