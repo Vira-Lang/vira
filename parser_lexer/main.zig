@@ -35,7 +35,7 @@ pub fn main() !void {
     } else if (std.mem.eql(u8, command, "fmt")) {
         const formatted = try format(allocator, source);
         defer allocator.free(formatted);
-        try std.fs.cwd().writeFile(file_path, formatted);
+        try std.fs.cwd().writeFile(.{ .sub_path = file_path, .data = formatted });
         std.debug.print("Formatted {s}\n", .{file_path});
     } else {
         std.debug.print("Unknown command: {s}\n", .{command});
