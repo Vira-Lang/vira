@@ -14,7 +14,11 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Vec<AstNode>, String> {
         let mut statements = Vec::new();
         while !self.is_at_end() {
-            statements.push(self.statement()?);
+            if let Ok(stmt) = self.statement() {
+                statements.push(stmt);
+            } else {
+                return Err("Parse error in statement.".to_string());
+            }
         }
         Ok(statements)
     }
@@ -34,7 +38,7 @@ impl Parser {
             self.return_stmt()
         } else if self.match_token(TokenType::Write) {
             self.write_stmt()
-        } else if self.match_token(TokenType::LeftBracket) || self.match_token(TokenType::LeftBrace) {
+        } else if self.match_token(TokenType::LeftBrace) {
             self.block()
         } else {
             self.expression_stmt()
@@ -57,13 +61,12 @@ impl Parser {
             }
         }
         self.consume(TokenType::RightParen, "Expect ')' after params.")?;
-        if self.match_token(TokenType::Arrow) {
-            let return_type = self.parse_type()?;
-            let body = self.statement()?;
-            Ok(AstNode::FuncDecl(name, params, return_type, Box::new(body)))
-        } else {
-            Err("Missing '->' in function declaration.".to_string())
+        if !self.match_token(TokenType::Arrow) {
+            return Err("Missing '->' in function declaration.".to_string());
         }
+        let return_type = self.parse_type()?;
+        let body = self.statement()?;
+        Ok(AstNode::FuncDecl(name, params, return_type, Box::new(body)))
     }
 
     fn var_decl(&mut self) -> Result<AstNode, String> {
@@ -103,7 +106,7 @@ impl Parser {
     }
 
     fn return_stmt(&mut self) -> Result<AstNode, String> {
-        let expr = if !self.check(TokenType::RightBracket) && !self.check(TokenType::RightBrace) {
+        let expr = if !self.check(TokenType::RightBrace) {
             Some(Box::new(self.expression()?))
         } else {
             None
@@ -118,19 +121,16 @@ impl Parser {
 
     fn block(&mut self) -> Result<AstNode, String> {
         let mut statements = Vec::new();
-        while !self.check(TokenType::RightBracket) && !self.check(TokenType::RightBrace) && !self.is_at_end() {
+        while !self.check(TokenType::RightBrace) && !self.is_at_end() {
             statements.push(self.statement()?);
         }
-        if self.check(TokenType::RightBracket) {
-            self.consume(TokenType::RightBracket, "Expect ']' after block.")?;
-        } else {
-            self.consume(TokenType::RightBrace, "Expect '}' after block.")?;
-        }
+        self.consume(TokenType::RightBrace, "Expect '}' after block.")?;
         Ok(AstNode::Block(statements))
     }
 
     fn expression_stmt(&mut self) -> Result<AstNode, String> {
-        self.expression()
+        let expr = self.expression()?;
+        Ok(expr)
     }
 
     fn expression(&mut self) -> Result<AstNode, String> {
@@ -140,8 +140,9 @@ impl Parser {
     fn logical_or(&mut self) -> Result<AstNode, String> {
         let mut expr = self.logical_and()?;
         while self.match_token(TokenType::Or) {
+            let op = BinOp::Or;
             let right = self.logical_and()?;
-            expr = AstNode::Binary(Box::new(expr), BinOp::Or, Box::new(right));
+            expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
         }
         Ok(expr)
     }
@@ -149,8 +150,9 @@ impl Parser {
     fn logical_and(&mut self) -> Result<AstNode, String> {
         let mut expr = self.equality()?;
         while self.match_token(TokenType::And) {
+            let op = BinOp::And;
             let right = self.equality()?;
-            expr = AstNode::Binary(Box::new(expr), BinOp::And, Box::new(right));
+            expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
         }
         Ok(expr)
     }
@@ -158,7 +160,11 @@ impl Parser {
     fn equality(&mut self) -> Result<AstNode, String> {
         let mut expr = self.comparison()?;
         while self.match_token(TokenType::EqualEqual) || self.match_token(TokenType::BangEqual) {
-            let op = if self.previous().typ == TokenType::EqualEqual { BinOp::Eq } else { BinOp::Neq };
+            let op = if matches!(self.previous().typ, TokenType::EqualEqual) {
+                BinOp::Eq
+            } else {
+                BinOp::Neq
+            };
             let right = self.comparison()?;
             expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
         }
@@ -167,24 +173,32 @@ impl Parser {
 
     fn comparison(&mut self) -> Result<AstNode, String> {
         let mut expr = self.term()?;
-        while self.match_token(TokenType::Less) || self.match_token(TokenType::Greater) || self.match_token(TokenType::LessEqual) || self.match_token(TokenType::GreaterEqual) {
-            let op = match self.previous().typ {
-                TokenType::Less => BinOp::Lt,
-                TokenType::Greater => BinOp::Gt,
-                TokenType::LessEqual => BinOp::Le,
-                TokenType::GreaterEqual => BinOp::Ge,
-                _ => unreachable!(),
-            };
-            let right = self.term()?;
-            expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
-        }
-        Ok(expr)
+        while self.match_token(TokenType::Less)
+            || self.match_token(TokenType::Greater)
+            || self.match_token(TokenType::LessEqual)
+            || self.match_token(TokenType::GreaterEqual)
+            {
+                let op = match self.previous().typ {
+                    TokenType::Less => BinOp::Lt,
+                    TokenType::Greater => BinOp::Gt,
+                    TokenType::LessEqual => BinOp::Le,
+                    TokenType::GreaterEqual => BinOp::Ge,
+                    _ => unreachable!(),
+                };
+                let right = self.term()?;
+                expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
+            }
+            Ok(expr)
     }
 
     fn term(&mut self) -> Result<AstNode, String> {
         let mut expr = self.factor()?;
         while self.match_token(TokenType::Minus) || self.match_token(TokenType::Plus) {
-            let op = if self.previous().typ == TokenType::Plus { BinOp::Add } else { BinOp::Sub };
+            let op = if matches!(self.previous().typ, TokenType::Plus) {
+                BinOp::Add
+            } else {
+                BinOp::Sub
+            };
             let right = self.factor()?;
             expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
         }
@@ -193,22 +207,29 @@ impl Parser {
 
     fn factor(&mut self) -> Result<AstNode, String> {
         let mut expr = self.unary()?;
-        while self.match_token(TokenType::Star) || self.match_token(TokenType::Slash) || self.match_token(TokenType::Mod) {
-            let op = match self.previous().typ {
-                TokenType::Star => BinOp::Mul,
-                TokenType::Slash => BinOp::Div,
-                TokenType::Mod => BinOp::Mod,
-                _ => unreachable!(),
-            };
-            let right = self.unary()?;
-            expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
-        }
-        Ok(expr)
+        while self.match_token(TokenType::Star)
+            || self.match_token(TokenType::Slash)
+            || self.match_token(TokenType::Mod)
+            {
+                let op = match self.previous().typ {
+                    TokenType::Star => BinOp::Mul,
+                    TokenType::Slash => BinOp::Div,
+                    TokenType::Mod => BinOp::Mod,
+                    _ => unreachable!(),
+                };
+                let right = self.unary()?;
+                expr = AstNode::Binary(Box::new(expr), op, Box::new(right));
+            }
+            Ok(expr)
     }
 
     fn unary(&mut self) -> Result<AstNode, String> {
         if self.match_token(TokenType::Minus) || self.match_token(TokenType::Bang) {
-            let op = if self.previous().typ == TokenType::Minus { UnaryOp::Neg } else { UnaryOp::Not };
+            let op = if matches!(self.previous().typ, TokenType::Minus) {
+                UnaryOp::Neg
+            } else {
+                UnaryOp::Not
+            };
             let right = self.unary()?;
             Ok(AstNode::Unary(op, Box::new(right)))
         } else {
@@ -218,19 +239,19 @@ impl Parser {
 
     fn primary(&mut self) -> Result<AstNode, String> {
         if self.match_token(TokenType::Number) {
-            let value = self.previous().lexeme.parse::<i64>().map_err(|_| "Invalid number.")?;
+            let value: i64 = self.previous().lexeme.parse().map_err(|_| "Invalid number.".to_string())?;
             Ok(AstNode::Literal(value))
         } else if self.match_token(TokenType::Float) {
-            let value = self.previous().lexeme.parse::<f64>().map_err(|_| "Invalid float.")?;
+            let value: f64 = self.previous().lexeme.parse().map_err(|_| "Invalid float.".to_string())?;
             Ok(AstNode::FloatLiteral(value))
         } else if self.match_token(TokenType::True) {
             Ok(AstNode::BoolLiteral(true))
         } else if self.match_token(TokenType::False) {
             Ok(AstNode::BoolLiteral(false))
         } else if self.match_token(TokenType::String) {
-            Ok(AstNode::StringLiteral(self.previous().lexeme))
+            Ok(AstNode::StringLiteral(self.previous().lexeme.clone()))
         } else if self.match_token(TokenType::Identifier) {
-            let name = self.previous().lexeme;
+            let name = self.previous().lexeme.clone();
             if self.match_token(TokenType::LeftParen) {
                 let mut args = Vec::new();
                 if !self.check(TokenType::RightParen) {
@@ -268,8 +289,8 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<ViraType, String> {
-        let typ = self.consume(TokenType::Identifier, "Expect type.")?.lexeme;
-        match typ.as_str() {
+        let typ_str = self.consume(TokenType::Identifier, "Expect type.")?.lexeme;
+        match typ_str.as_str() {
             "int" => Ok(ViraType::Int),
             "float" => Ok(ViraType::Float),
             "bool" => Ok(ViraType::Bool),
@@ -280,7 +301,7 @@ impl Parser {
                 self.consume(TokenType::Greater, "Expect '>' for array type.")?;
                 Ok(ViraType::Array(Box::new(inner)))
             }
-            _ => Err("Unknown type.".to_string()),
+            _ => Err(format!("Unknown type '{}'.", typ_str)),
         }
     }
 
@@ -325,6 +346,6 @@ impl Parser {
     }
 
     fn is_at_end(&self) -> bool {
-        self.peek().typ == TokenType::Eof
+        matches!(self.peek().typ, TokenType::Eof)
     }
 }
