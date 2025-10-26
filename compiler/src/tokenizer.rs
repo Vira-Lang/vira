@@ -1,15 +1,64 @@
-use crate::Token;
-use crate::TokenType;
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub typ: TokenType,
+    pub lexeme: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    Func,
+    Let,
+    If,
+    Else,
+    While,
+    For,
+    Return,
+    Write,
+    True,
+    False,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Mod,
+    EqualEqual,
+    BangEqual,
+    Bang,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Or,
+    LeftBracket,
+    RightBracket,
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    Colon,
+    Equals,
+    Comma,
+    Arrow,
+    Number,
+    Float,
+    String,
+    Identifier,
+    IntType,
+    FloatType,
+    BoolType,
+    StringType,
+    Eof,
+}
 
 pub fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut chars = source.chars().peekable();
-    let mut line = 1;
 
     while let Some(c) = chars.next() {
         match c {
             ' ' | '\r' | '\t' => continue,
-            '\n' => line += 1,
+            '\n' => {},
             'f' if matches_keyword(&mut chars, "unc") => tokens.push(Token { typ: TokenType::Func, lexeme: "func".to_string() }),
             'l' if matches_keyword(&mut chars, "et") => tokens.push(Token { typ: TokenType::Let, lexeme: "let".to_string() }),
             'i' if matches_keyword(&mut chars, "f") => tokens.push(Token { typ: TokenType::If, lexeme: "if".to_string() }),
@@ -28,39 +77,53 @@ pub fn tokenize(source: &str) -> Vec<Token> {
                 } else {
                     tokens.push(Token { typ: TokenType::Minus, lexeme: "-".to_string() });
                 }
-            },
+            }
             '*' => tokens.push(Token { typ: TokenType::Star, lexeme: "*".to_string() }),
             '/' => tokens.push(Token { typ: TokenType::Slash, lexeme: "/".to_string() }),
             '%' => tokens.push(Token { typ: TokenType::Mod, lexeme: "%".to_string() }),
-            '=' if chars.peek() == Some(&'=') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::EqualEqual, lexeme: "==".to_string() });
+            '=' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::EqualEqual, lexeme: "==".to_string() });
+                } else {
+                    tokens.push(Token { typ: TokenType::Equals, lexeme: "=".to_string() });
+                }
             }
-            '!' if chars.peek() == Some(&'=') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::BangEqual, lexeme: "!=".to_string() });
-            } else {
-                tokens.push(Token { typ: TokenType::Bang, lexeme: "!".to_string() });
+            '!' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::BangEqual, lexeme: "!=".to_string() });
+                } else {
+                    tokens.push(Token { typ: TokenType::Bang, lexeme: "!".to_string() });
+                }
             }
-            '<' if chars.peek() == Some(&'=') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::LessEqual, lexeme: "<=".to_string() });
-            } else {
-                tokens.push(Token { typ: TokenType::Less, lexeme: "<".to_string() });
+            '<' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::LessEqual, lexeme: "<=".to_string() });
+                } else {
+                    tokens.push(Token { typ: TokenType::Less, lexeme: "<".to_string() });
+                }
             }
-            '>' if chars.peek() == Some(&'=') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::GreaterEqual, lexeme: ">=".to_string() });
-            } else {
-                tokens.push(Token { typ: TokenType::Greater, lexeme: ">".to_string() });
+            '>' => {
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::GreaterEqual, lexeme: ">=".to_string() });
+                } else {
+                    tokens.push(Token { typ: TokenType::Greater, lexeme: ">".to_string() });
+                }
             }
-            '&' if chars.peek() == Some(&'&') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::And, lexeme: "&&".to_string() });
+            '&' => {
+                if chars.peek() == Some(&'&') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::And, lexeme: "&&".to_string() });
+                }
             }
-            '|' if chars.peek() == Some(&'|') => {
-                chars.next();
-                tokens.push(Token { typ: TokenType::Or, lexeme: "||".to_string() });
+            '|' => {
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                    tokens.push(Token { typ: TokenType::Or, lexeme: "||".to_string() });
+                }
             }
             '[' => tokens.push(Token { typ: TokenType::LeftBracket, lexeme: "[".to_string() }),
             ']' => tokens.push(Token { typ: TokenType::RightBracket, lexeme: "]".to_string() }),
@@ -69,14 +132,13 @@ pub fn tokenize(source: &str) -> Vec<Token> {
             '{' => tokens.push(Token { typ: TokenType::LeftBrace, lexeme: "{".to_string() }),
             '}' => tokens.push(Token { typ: TokenType::RightBrace, lexeme: "}".to_string() }),
             ':' => tokens.push(Token { typ: TokenType::Colon, lexeme: ":".to_string() }),
-            '=' => tokens.push(Token { typ: TokenType::Equals, lexeme: "=".to_string() }),
             ',' => tokens.push(Token { typ: TokenType::Comma, lexeme: ",".to_string() }),
             '"' => {
                 let mut string = String::new();
                 while let Some(ch) = chars.next() {
                     if ch == '"' { break; }
                     string.push(ch);
-                    if ch == '\n' { line += 1; }
+                    if ch == '\n' {}
                 }
                 tokens.push(Token { typ: TokenType::String, lexeme: string });
             }
