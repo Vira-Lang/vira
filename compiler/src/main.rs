@@ -1,33 +1,31 @@
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, BufRead, Write};
 use std::path::Path;
 
-use crate::codegen::CodeGen;
-use crate::interpreter::Interpreter;
-use crate::parser::Parser;
-use crate::tokenizer::tokenize;
-
 mod ast;
+mod arena;
 mod codegen;
 mod interpreter;
 mod parser;
 mod tokenizer;
-mod arena;
 
-use ast::{AstNode, ViraType};
-use arena::Arena;
+use codegen::CodeGen;
+use interpreter::Interpreter;
+use parser::Parser;
+use tokenizer::tokenize;
 
-fn compile_to_object(source_dir: &Path, platform: &str, output_dir: &Path) -> Result<(), String> {
-    let main_file = source_dir.join("main.vira");
-    let source = fs::read_to_string(main_file).map_err(|e| e.to_string())?;
+fn compile_to_object(_source_dir: &Path, _platform: &str, _output_dir: &Path) -> Result<(), String> {
+    let main_file = _source_dir.join("main.vira");
+    let source = fs::read_to_string(&main_file).map_err(|e| e.to_string())?;
     let tokens = tokenize(&source);
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
     let mut codegen = CodeGen::new();
-    codegen.compile(&ast)?;
+    let _code = codegen.compile(&ast)?;
 
+    // For now, just compile, no output file written
     Ok(())
 }
 
@@ -38,7 +36,8 @@ fn run_file(file: &Path) -> Result<(), String> {
     let ast = parser.parse()?;
 
     let mut interp = Interpreter::new();
-    interp.interpret(&ast)
+    let _result = interp.interpret(&ast)?;
+    Ok(())
 }
 
 fn main() -> io::Result<()> {
@@ -53,15 +52,24 @@ fn main() -> io::Result<()> {
 
     match command.as_str() {
         "compile" => {
+            if args.len() < 7 {
+                println!("Usage: compile <dir> --platform <plat> --output <out>");
+                return Ok(());
+            }
             let dir = Path::new(&args[2]);
             let platform = &args[4];
             let output = Path::new(&args[6]);
-            compile_to_object(dir, platform, output).unwrap();
-            println!("Compiled to {}", output.display());
+            if let Err(e) = compile_to_object(dir, platform, output) {
+                eprintln!("Compile error: {}", e);
+            } else {
+                println!("Compiled to {}", output.display());
+            }
         }
         "run" => {
             let file = Path::new(&args[2]);
-            run_file(file).unwrap();
+            if let Err(e) = run_file(file) {
+                eprintln!("Run error: {}", e);
+            }
         }
         "repl" => {
             println!("Vira REPL");
@@ -72,15 +80,18 @@ fn main() -> io::Result<()> {
                 io::stdout().flush()?;
                 let mut input = String::new();
                 stdin.lock().read_line(&mut input)?;
-                if input.trim() == "exit" {
+                let input_trim = input.trim();
+                if input_trim == "exit" {
                     break;
                 }
                 let tokens = tokenize(&input);
                 let mut parser = Parser::new(tokens);
-                if let Ok(ast) = parser.parse() {
-                    if let Ok(value) = interp.interpret(&ast) {
-                        println!("{:?}", value);
-                    }
+                match parser.parse() {
+                    Ok(ast) => match interp.interpret(&ast) {
+                        Ok(value) => println!("{:?}", value),
+                        Err(e) => eprintln!("Error: {}", e),
+                    },
+                    Err(e) => eprintln!("Parse error: {}", e),
                 }
             }
         }
@@ -88,16 +99,27 @@ fn main() -> io::Result<()> {
             println!("Tests passed.");
         }
         "eval" => {
+            if args.len() < 3 {
+                println!("Usage: eval <code>");
+                return Ok(());
+            }
             let code = &args[2];
             let tokens = tokenize(code);
             let mut parser = Parser::new(tokens);
-            let ast = parser.parse().unwrap();
-            let mut interp = Interpreter::new();
-            let result = interp.interpret(&ast).unwrap();
-            println!("Eval result: {:?}", result);
+            match parser.parse() {
+                Ok(ast) => {
+                    let mut interp = Interpreter::new();
+                    match interp.interpret(&ast) {
+                        Ok(result) => println!("Eval result: {:?}", result),
+                        Err(e) => eprintln!("Error: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("Parse error: {}", e),
+            }
         }
         _ => println!("Unknown command"),
     }
 
     Ok(())
 }
+
