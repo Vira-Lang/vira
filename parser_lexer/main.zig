@@ -13,6 +13,8 @@ const TokenType = enum {
     Func,           // func
     If,             // if
     Else,           // else
+    While,          // while added
+    For,            // for added
     Return,         // return
     Colon,          // :
     Arrow,          // ->
@@ -23,14 +25,14 @@ const TokenType = enum {
     Comma,          // ,
     HashEqual,      // # ==
     Equals,         // =
-    Plus, Minus, Star, Slash,
+    Plus, Minus, Star, Slash, Mod, // Mod added
     Less, Greater, LessEqual, GreaterEqual, EqualEqual, BangEqual,
     Bang,           // !
     And, Or,        // and or
     Identifier,
-    Number,
+    Number, Float,  // Float added
     String,
-    IntType, StringType, BoolType, // int, string, bool
+    IntType, FloatType, StringType, BoolType, ArrayType, // added FloatType, ArrayType
     True, False,
     Eof,
 };
@@ -112,7 +114,7 @@ const Lexer = struct {
         }
     }
 
-    fn scanToken(self: *Lexer) !void {
+    fn scanToken(self: *Lexer, tokens: *ArrayList(Token)) !void {
         self.skipWhitespace();
         if (self.isAtEnd()) return;
 
@@ -123,7 +125,18 @@ const Lexer = struct {
             '<' => if (self.peek() == '>') {
                 _ = self.advance();
                 try self.addToken(tokens, .Import);
-            } else try self.errorAtCurrent("Expected '>' after '<' for import."),
+            } else if (self.peek() == '=') {
+                _ = self.advance();
+                try self.addToken(tokens, .LessEqual);
+            } else {
+                try self.addToken(tokens, .Less);
+            },
+            '>' => if (self.peek() == '=') {
+                _ = self.advance();
+                try self.addToken(tokens, .GreaterEqual);
+            } else {
+                try self.addToken(tokens, .Greater);
+            },
             ':' => if (self.peek() == ':') {
                 _ = self.advance();
                 try self.addToken(tokens, .From);
@@ -150,23 +163,20 @@ const Lexer = struct {
             },
             '*' => try self.addToken(tokens, .Star),
             '/' => try self.addToken(tokens, .Slash),
-            '<' => if (self.peek() == '=') {
-                _ = self.advance();
-                try self.addToken(tokens, .LessEqual);
-            } else {
-                try self.addToken(tokens, .Less);
-            },
-            '>' => if (self.peek() == '=') {
-                _ = self.advance();
-                try self.addToken(tokens, .GreaterEqual);
-            } else {
-                try self.addToken(tokens, .Greater);
-            },
+            '%' => try self.addToken(tokens, .Mod),
             '!' => if (self.peek() == '=') {
                 _ = self.advance();
                 try self.addToken(tokens, .BangEqual);
             } else {
                 try self.addToken(tokens, .Bang);
+            },
+            '&' => if (self.peek() == '&') {
+                _ = self.advance();
+                try self.addToken(tokens, .And);
+            },
+            '|' => if (self.peek() == '|') {
+                _ = self.advance();
+                try self.addToken(tokens, .Or);
             },
             '#' => if (self.peek() == ' ' and self.peekNext() == '=') {
                 self.current += 2;
@@ -218,8 +228,13 @@ const Lexer = struct {
 
     fn number(self: *Lexer, tokens: *ArrayList(Token)) !void {
         while (std.ascii.isDigit(self.peek())) _ = self.advance();
-        // Simple int only
-        try self.addToken(tokens, .Number);
+        if (self.peek() == '.' and std.ascii.isDigit(self.peekNext())) {
+            _ = self.advance();
+            while (std.ascii.isDigit(self.peek())) _ = self.advance();
+            try self.addToken(tokens, .Float);
+        } else {
+            try self.addToken(tokens, .Number);
+        }
     }
 
     fn identifier(self: *Lexer, tokens: *ArrayList(Token)) !void {
@@ -241,14 +256,18 @@ const keywords = std.ComptimeStringMap(TokenType, .{
     .{ "func", .Func },
     .{ "if", .If },
     .{ "else", .Else },
+    .{ "while", .While },
+    .{ "for", .For },
     .{ "return", .Return },
     .{ "and", .And },
     .{ "or", .Or },
     .{ "true", .True },
     .{ "false", .False },
     .{ "int", .IntType },
+    .{ "float", .FloatType },
     .{ "string", .StringType },
     .{ "bool", .BoolType },
+    .{ "array", .ArrayType },
 });
 
 // AST Nodes
@@ -259,10 +278,13 @@ const AstNode = union(enum) {
     VarDecl: struct { name: []const u8, typ: ?[]const u8, init: *AstNode },
     FuncDecl: struct { name: []const u8, params: ArrayList(Param), return_type: []const u8, body: *AstNode },
     IfStmt: struct { cond: *AstNode, then: *AstNode, else_: ?*AstNode },
+    WhileStmt: struct { cond: *AstNode, body: *AstNode }, // added
+    ForStmt: struct { init: *AstNode, cond: *AstNode, incr: *AstNode, body: *AstNode }, // added
     ReturnStmt: struct { expr: ?*AstNode },
     Block: ArrayList(*AstNode),
     Call: struct { callee: []const u8, args: ArrayList(*AstNode) },
-    // Add more
+    ArrayLiteral: ArrayList(*AstNode), // added
+    Index: struct { arr: *AstNode, idx: *AstNode }, // added
 };
 
 const Param = struct { name: []const u8, typ: []const u8 };
@@ -295,6 +317,8 @@ const Parser = struct {
         if (self.match(.Func)) return try self.funcDecl();
         if (self.match(.Let)) return try self.varDecl();
         if (self.match(.If)) return try self.ifStmt();
+        if (self.match(.While)) return try self.whileStmt();
+        if (self.match(.For)) return try self.forStmt();
         if (self.match(.Return)) return try self.returnStmt();
         if (self.match(.LeftBracket)) return try self.block();
         return try self.expressionStmt();
@@ -317,7 +341,9 @@ const Parser = struct {
         if (self.match(.Arrow)) {
             const return_type = try self.consume(.Identifier, "Expect return type.");
             const body = try self.statement();
-            return try self.allocator.create(AstNode{ .FuncDecl = .{ .name = name.lexeme, .params = params, .return_type = return_type.lexeme, .body = body } });
+            const node = try self.allocator.create(AstNode);
+            node.* = .{ .FuncDecl = .{ .name = name.lexeme, .params = params, .return_type = return_type.lexeme, .body = body } };
+            return node;
         } else {
             return error.MissingArrow;
         }
@@ -331,7 +357,9 @@ const Parser = struct {
         }
         _ = try self.consume(.Equals, "Expect '=' after variable.");
         const init = try self.expression();
-        return try self.allocator.create(AstNode{ .VarDecl = .{ .name = name.lexeme, .typ = typ, .init = init } });
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .VarDecl = .{ .name = name.lexeme, .typ = typ, .init = init } };
+        return node;
     }
 
     fn ifStmt(self: *Parser) !*AstNode {
@@ -341,7 +369,27 @@ const Parser = struct {
         if (self.match(.Else)) {
             else_ = try self.statement();
         }
-        return try self.allocator.create(AstNode{ .IfStmt = .{ .cond = cond, .then = then, .else_ = else_ } });
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .IfStmt = .{ .cond = cond, .then = then, .else_ = else_ } };
+        return node;
+    }
+
+    fn whileStmt(self: *Parser) !*AstNode {
+        const cond = try self.expression();
+        const body = try self.statement();
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .WhileStmt = .{ .cond = cond, .body = body } };
+        return node;
+    }
+
+    fn forStmt(self: *Parser) !*AstNode {
+        const init = try self.statement();
+        const cond = try self.expression();
+        const incr = try self.expression();
+        const body = try self.statement();
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .ForStmt = .{ .init = init, .cond = cond, .incr = incr, .body = body } };
+        return node;
     }
 
     fn returnStmt(self: *Parser) !*AstNode {
@@ -349,7 +397,9 @@ const Parser = struct {
         if (!self.check(.RightBracket)) {
             expr = try self.expression();
         }
-        return try self.allocator.create(AstNode{ .ReturnStmt = .{ .expr = expr } });
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .ReturnStmt = .{ .expr = expr } };
+        return node;
     }
 
     fn block(self: *Parser) !*AstNode {
@@ -358,17 +408,41 @@ const Parser = struct {
             try statements.append(try self.statement());
         }
         _ = try self.consume(.RightBracket, "Expect ']' after block.");
-        return try self.allocator.create(AstNode{ .Block = statements });
+        const node = try self.allocator.create(AstNode);
+        node.* = .{ .Block = statements };
+        return node;
     }
 
     fn expressionStmt(self: *Parser) !*AstNode {
-        const expr = try self.expression();
-        // Assume statements end with expr for now
-        return expr;
+        return try self.expression();
     }
 
     fn expression(self: *Parser) !*AstNode {
-        return try self.equality();
+        return try self.logicalOr();
+    }
+
+    fn logicalOr(self: *Parser) !*AstNode {
+        var expr = try self.logicalAnd();
+        while (self.match(.Or)) {
+            const op = self.previous().typ;
+            const right = try self.logicalAnd();
+            const new_expr = try self.allocator.create(AstNode);
+            new_expr.* = .{ .Binary = .{ .left = expr, .op = op, .right = right } };
+            expr = new_expr;
+        }
+        return expr;
+    }
+
+    fn logicalAnd(self: *Parser) !*AstNode {
+        var expr = try self.equality();
+        while (self.match(.And)) {
+            const op = self.previous().typ;
+            const right = try self.equality();
+            const new_expr = try self.allocator.create(AstNode);
+            new_expr.* = .{ .Binary = .{ .left = expr, .op = op, .right = right } };
+            expr = new_expr;
+        }
+        return expr;
     }
 
     fn equality(self: *Parser) !*AstNode {
@@ -409,7 +483,7 @@ const Parser = struct {
 
     fn factor(self: *Parser) !*AstNode {
         var expr = try self.unary();
-        while (self.match(.Slash) or self.match(.Star)) {
+        while (self.match(.Slash) or self.match(.Star) or self.match(.Mod)) {
             const op = self.previous().typ;
             const right = try self.unary();
             const new_expr = try self.allocator.create(AstNode);
@@ -441,7 +515,8 @@ const Parser = struct {
                 }
             }
             _ = try self.consume(.RightParen, "Expect ')' after arguments.");
-            const callee = if (std.mem.eql(u8, expr.Literal.value, expr.Literal.value)) expr.Literal.value else return error.InvalidCallee;
+            if (expr.* != .Literal or expr.Literal.typ != .Identifier) return error.InvalidCallee;
+            const callee = expr.Literal.value;
             const node = try self.allocator.create(AstNode);
             node.* = .{ .Call = .{ .callee = callee, .args = args } };
             return node;
@@ -453,8 +528,22 @@ const Parser = struct {
         if (self.match(.False)) return try self.literal(.False);
         if (self.match(.True)) return try self.literal(.True);
         if (self.match(.Number)) return try self.literal(.Number);
+        if (self.match(.Float)) return try self.literal(.Float);
         if (self.match(.String)) return try self.literal(.String);
         if (self.match(.Identifier)) return try self.literal(.Identifier);
+        if (self.match(.LeftBracket)) {
+            var elems = ArrayList(*AstNode).init(self.allocator);
+            if (!self.check(.RightBracket)) {
+                while (true) {
+                    try elems.append(try self.expression());
+                    if (!self.match(.Comma)) break;
+                }
+            }
+            _ = try self.consume(.RightBracket, "Expect ']' after array.");
+            const node = try self.allocator.create(AstNode);
+            node.* = .{ .ArrayLiteral = elems };
+            return node;
+        }
         if (self.match(.LeftParen)) {
             const expr = try self.expression();
             _ = try self.consume(.RightParen, "Expect ')' after expression.");
@@ -510,10 +599,8 @@ const Parser = struct {
 
 // Formatter stub
 fn format(source: []const u8, allocator: Allocator) ![]u8 {
-    // Simple formatter: add spaces, etc.
-    _ = source;
     _ = allocator;
-    return try allocator.dupe(u8, source); // Stub
+    return try allocator.dupe(u8, source); // Stub, can be expanded
 }
 
 pub fn main() !void {
