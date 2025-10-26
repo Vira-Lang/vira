@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "description": "Vira CLI in JavaScript",
   "main": "main.js",
+  "type": "module",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "build": "rimraf dist && pkg . --targets node20-linux-x64,node20-macos-x64,node20-win-x64 --output dist/vira"
   },
   "dependencies": {
     "chalk": "^4.1.2",
@@ -15,7 +17,22 @@
     "ora": "^5.4.1",
     "rimraf": "^3.0.2"
   },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
   "bin": {
     "vira": "./main.js"
-  }
+  },
+  "pkg": {
+    "scripts": [
+      "main.js"
+    ],
+    "assets": [
+      "templates/**/*",
+      "config/**/*"
+    ],
+    "outputPath": "dist"
+  },
+  "author": "VoidArc Studio",
+  "license": "MIT"
 }
