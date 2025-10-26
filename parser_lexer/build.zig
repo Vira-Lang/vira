@@ -6,9 +6,9 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "vira-parser_lexer",
-        .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
-        .optimize = optimize,
+        .root_source_file = b.path("main.zig"),
+                                .target = target,
+                                .optimize = optimize,
     });
 
     b.installArtifact(exe);
